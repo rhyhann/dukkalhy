@@ -23,7 +23,7 @@ YAML
         :filetitle => "la_grande_messe_de_l_invraisemblable",
         :formatter => "markdown",
         :content => @content
-    }
+        }
 
     @parsed = OpenStruct.new(@params)
   end
