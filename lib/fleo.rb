@@ -94,10 +94,11 @@ module  Fleow
   end
 
   class Holder
-    attr_reader :path, :rendered
+    attr_reader :path, :dirs, :rendered
 
     def initialize(path, &block)
       @path, @block, @rendered = path, block, false
+      @dirs = @path.split('/').delete_at(-1).join('/')
       @@holders ||= []
       @@holders << self
     end
@@ -146,10 +147,24 @@ module  Fleow
   end
 
   module Writer
-    def write_all
+    def write_all(dest)
       ::Fleow::Holder.each do |h|
-        File.open( File.join( SITE, 'site/', h.path), 'w') do |f|
+        FileUtils.mkdir_p(File.join(dest, h.dirs))
+        File.open(File.join(SITE, dest, h.path), 'w') do |f|
           f.write(h.rendered)
+    def write(dest)
+      FileUtils.mkdir_p(File.join(dest, dir))
+ 
+ 
+      if template[/\.html$/].nil?
+        FileUtils.mkdir_p(path)
+        path = File.join(path, "index.html")
+      end
+ 
+      File.open(path, 'w') do |f|
+        f.write(self.output)
+      end
+    end
         end
       end
     end
