@@ -11,7 +11,7 @@ class Hash
 end
 
 # The program
-module  Fleo
+module  Fleow
   
   # This is the first step of the site generation.
   # This module should be used with the *folder* or *file* method,
@@ -43,13 +43,15 @@ module  Fleo
       # If it's the full path, we remove unneeded path content
       path = full_path.sub(/.*\/pages/, '/pages').split '/'
       # The file name parsing
-      regular = /_?([a-zA-Z]*)_?(\d+)-(\d+)-(\d+)_(\w+)\.([a-zA-Z]+)/
-      if path[-1] =~ regular
+      for_page   = /_?([a-zA-Z]*)_?(\d+)-(\d+)-(\d+)_(\w+)\.([a-zA-Z]+)/
+      for_layout = /(\w+)\.(\w+)/
+      if path[-1] =~ for_page
         params[:markers], params[:year]     , params[:month]    ,  \
             params[:day], params[:filetitle], params[:renderer] = \
-            *(path[-1].scan regular)[0]
+            *(path[-1].scan for_page)[0]
         params[:markers] = params[:markers].split '_'
-      else
+      elsif path[-1] =~ for_layout
+        params[:filetitle], params[:renderer] = *(path[-1].scan for_layout)[0]
       end
       # The file name and pages/ are useless
       path.delete_at(-1)
@@ -58,62 +60,101 @@ module  Fleo
       params[:folders] = path
       params[:content] = content
       
-      params
+      Page.new(params)
     end
-  end
-
-
-  # This module is the most important part of the site generation.
-  #
-  module Holder
-
-    # When holding a block, the first argument
-    # is the array of all the pages, the second
-    # is eventually the parent.
-    # The only role of this is to create the template
-    # variables.
-    def hold(name, parent = nil, &block)
-      defined?(@@blocks) ?
-          @@blocks[name] = [block, parent] :
-          @@blocks       = {name => [block, parent]}
-    end
-    def blocks() @@blocks || [] end
   end
 
 
   class Page
+    attr_writer :rendered
+    def initialize(params)
+      @params = params
+      @rendered = {}
+    end
+    def [](element)
+      @params[element]
+    end
+    #def []=(element, value)
+    #  @params[element] = value
+    #end
+
+    def rendered(name)
+      @rendered[name] ||= render \
+          :renderer => @params[:renderer], #TODO: customize renderers
+          :page     => self,
+          :name     => name,
+          :content  => @params[name]
+    end
+    def method_missing(method, value = nil, *arguments)
+      method = method.to_s
+      method.to_s.split('').last == "=" ?
+          @rendered[method.chomp.to_sym] = value :
+          @rendered[method.to_sym]
+    end
+  end
+
+  class Holder
     attr_reader :path, :rendered
 
     def initialize(path, &block)
-      @@pages ||= []
-      @@pages << block
-      @path, @block = path, block
+      @path, @block, @rendered = path, block, false
+      @@holders ||= []
+      @@holders << self
     end
 
     def render()
       @rendered = @block.call
     end
+
+    def rendered
+      @rendered || @rendered = self.render
+    end
+
+    class << self
+      include Enumerable
+      def each
+        (@@holders ||= []).each {|p| yield p}
+      end
+    end
   end
 
+
   module Renderer
-    def render(page, given = nil)
-      send page[:renderer], page, (given ? given : page[:content])
+    def render(page_or_params = {})
+      p = page_or_params
+      p.is_a?(Page) ?
+        (send p[:renderer], p       , :content, p[:content]) :
+        (send p[:renderer], p[:page], p[:name], p[:content])
     end
 
-    def haml(page, given)
-      Haml.page(page, given, self)
-    end
 
-    module Haml
-      def self.page(page, given, env)
-        require 'haml'
-        @@pages ||= []
-        @@pages[page[:id]] = ::Haml::Engine.new(given).render(env)
-        @@pages[page[:id]]
+    def render_haml(page_or_content, name = nil, content = nil)
+      poc = page_or_content
+      name && content ?
+        (poc.send("#{name}=", ::Haml::Engine.new(content).render(self))) :
+        (::Haml::Engine.new(poc).render(self))
+    end
+    alias :haml :render_haml
+
+    def render_raw(page_or_content, name = nil, content = nil)
+      poc = page_or_content
+      name && content ?
+          (poc.send("#{name}=", content)) :
+          poc
+    end
+    alias :raw :render_raw
+  end
+
+  module Writer
+    def write_all
+      ::Fleow::Holder.each do |h|
+        File.open( File.join( SITE, 'site/', h.path), 'w') do |f|
+          f.write(h.rendered)
+        end
       end
     end
   end
 end
 
-include Fleo::Renderer
-include Fleo::Holder
+include Fleow::Renderer
+include Fleow::Writer
