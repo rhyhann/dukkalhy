@@ -11,25 +11,19 @@ class Hash
 end
 class String
   def /(other)
-    File.join (File.dirname File.expand_path self), other.to_s
+    File.join File.expand_path(self), other.to_s
   end
 end
-# Helpers that will be included in the classes
-module Writable
-  def write(file, type = 'w')
-    File.open(file, type) {|f| f.write(self)}
-  end
-end
+
+# This context will be very useful later.
+SELF = self
+SELF_CLASS = class << self; self; end
+SITE ||= File.dirname(__FILE__)/''
+
+
 # The program
 module  Fleow
   
-  # This is the first step of the site generation.
-  # This module should be used with the *folder* or *file* method,
-  # and it will either return an array of all the elements (Array of Openstruct)
-  # or the single element (Openstruct).
-  # Some people would wonder why these methods are so splat. It's because I plan,
-  # in order to take over the world, to add more content sources, in the future.
-  # It's nevertheless not splat enough (TODO)
   module Parser
     
     def self.folder(path)
@@ -108,21 +102,18 @@ module  Fleow
 
     def initialize(path, &block)
       @path, @block, @rendered = path, block, false
-      @dirs = @path.split('/').delete_at(-1).join('/')
+      @dirs = @path.split('/');@dirs.pop; @dirs = @dirs.join('/')
       @@holders ||= []
       @@holders << self
     end
 
-    def render()
-      @rendered = @block.call
-    end
-
     def rendered
-      @rendered || @rendered = self.render
+      @rendered || @rendered = @block.call
     end
 
-    def write(file, type = 'w')
-      File.open(file, type) {|f| f.write(self.render)}
+    def write(dest, type = 'w')
+      FileUtils.mkdir_p(dest/h.dirs)
+      File.open(dest/h.path, type) {|f| f.write(self.rendered)}
     end
 
     class << self
@@ -142,29 +133,23 @@ module  Fleow
         (send p[:renderer], p[:page], p[:name], p[:content])
     end
 
-
-    def render_haml(page_or_content, name = nil, content = nil)
-      poc = page_or_content
-      name && content ?
-        (poc.send("#{name}=", ::Haml::Engine.new(content).render(self))) :
-        (::Haml::Engine.new(poc).render(self))
+    def renderer(name, &block)
+      rendering = Proc.new do |poc, name, content|
+        poc.is_a?(Page) ?
+            (poc.send "#{name}=", block.call(content)) :
+            block.call(content || poc)
+      end
+      SELF_CLASS.class_eval do
+        define_method :"render_#{name}", rendering
+        define_method name, rendering
+      end
     end
-    alias :haml :render_haml
-
-    def render_raw(page_or_content, name = nil, content = nil)
-      poc = page_or_content
-      name && content ?
-          (poc.send("#{name}=", content)) :
-          poc
-    end
-    alias :raw :render_raw
   end
 
   module Writer
     def write_all(dest)
       ::Fleow::Holder.each do |h|
-        FileUtils.mkdir_p(dest/h.dirs)
-        h.write(SITE/dest/h.path)
+        h.write(dest)
       end
     end
   end
@@ -172,3 +157,7 @@ end
 
 include Fleow::Renderer
 include Fleow::Writer
+
+
+renderer(:haml) {|c| ::Haml::Engine.new(c).render(self) }
+renderer(:raw ) {|c| c}
