@@ -1,4 +1,4 @@
-%w(ostruct yaml).each {|lib| (require lib)}
+%w(yaml).each {|lib| (require lib)}
 
 # Ruby extensions
 class Hash
@@ -28,10 +28,10 @@ module  Fleo
     end
 
     def self.file(path)
-      yaml (File.read path)
+      yaml path, (File.read Dir.glob("#{path}*"))
     end
 
-    def self.yaml(content)
+    def self.yaml(path, content)
       # The header
       header  = (YAML.load content).symbolize
       # The content. We just remove the header
@@ -46,11 +46,10 @@ module  Fleo
       regular = /_?([a-zA-Z]*)_?(\d+)-(\d+)-(\d+)_(\w+)\.([a-zA-Z]+)/
       if path[-1] =~ regular
         params[:markers], params[:year]     , params[:month]    ,  \
-            params[:day], params[:filetitle], params[:formatter] = \
+            params[:day], params[:filetitle], params[:renderer] = \
             *(path[-1].scan regular)[0]
         params[:markers] = params[:markers].split '_'
       else
-        raise ArgumentError, "Bad naming of #{full_path}"
       end
       # The file name and pages/ are useless
       path.delete_at(-1)
@@ -59,11 +58,13 @@ module  Fleo
       params[:folders] = path
       params[:content] = content
       
-      OpenStruct.new params
+      params
     end
   end
 
 
+  # This module is the most important part of the site generation.
+  #
   module Holder
 
     # When holding a block, the first argument
@@ -71,11 +72,48 @@ module  Fleo
     # is eventually the parent.
     # The only role of this is to create the template
     # variables.
-    def self.add(name, parent = nil, &block)
-      @blocks ?
-          @blocks[name] = [block, parent] :
-          @blocks       = {name => [block, parent]}
+    def hold(name, parent = nil, &block)
+      defined?(@@blocks) ?
+          @@blocks[name] = [block, parent] :
+          @@blocks       = {name => [block, parent]}
+    end
+    def blocks() @@blocks || [] end
+  end
+
+
+  class Page
+    attr_reader :path, :rendered
+
+    def initialize(path, &block)
+      @@pages ||= []
+      @@pages << block
+      @path, @block = path, block
     end
 
+    def render()
+      @rendered = @block.call
+    end
+  end
+
+  module Renderer
+    def render(page, given = nil)
+      send page[:renderer], page, (given ? given : page[:content])
+    end
+
+    def haml(page, given)
+      Haml.page(page, given, self)
+    end
+
+    module Haml
+      def self.page(page, given, env)
+        require 'haml'
+        @@pages ||= []
+        @@pages[page[:id]] = ::Haml::Engine.new(given).render(env)
+        @@pages[page[:id]]
+      end
+    end
   end
 end
+
+include Fleo::Renderer
+include Fleo::Holder
