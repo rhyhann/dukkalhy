@@ -9,7 +9,17 @@ class Hash
     end
   end
 end
-
+class String
+  def /(other)
+    File.join (File.dirname File.expand_path self), other.to_s
+  end
+end
+# Helpers that will be included in the classes
+module Writable
+  def write(file, type = 'w')
+    File.open(file, type) {|f| f.write(self)}
+  end
+end
 # The program
 module  Fleow
   
@@ -111,6 +121,10 @@ module  Fleow
       @rendered || @rendered = self.render
     end
 
+    def write(file, type = 'w')
+      File.open(file, type) {|f| f.write(self.render)}
+    end
+
     class << self
       include Enumerable
       def each
@@ -149,23 +163,8 @@ module  Fleow
   module Writer
     def write_all(dest)
       ::Fleow::Holder.each do |h|
-        FileUtils.mkdir_p(File.join(dest, h.dirs))
-        File.open(File.join(SITE, dest, h.path), 'w') do |f|
-          f.write(h.rendered)
-    def write(dest)
-      FileUtils.mkdir_p(File.join(dest, dir))
- 
- 
-      if template[/\.html$/].nil?
-        FileUtils.mkdir_p(path)
-        path = File.join(path, "index.html")
-      end
- 
-      File.open(path, 'w') do |f|
-        f.write(self.output)
-      end
-    end
-        end
+        FileUtils.mkdir_p(dest/h.dirs)
+        h.write(SITE/dest/h.path)
       end
     end
   end
