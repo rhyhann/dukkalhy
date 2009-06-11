@@ -22,65 +22,43 @@ SITE ||= File.dirname(__FILE__)/''
 
 
 # The program
-module  Fleow
+module Dukkhalhy
   
   module Parser
-    
-    def self.folder(path)
-      # TODO: subfolder or folder method
-      Dir.glob("#{path}/**/*.*").map! {|f| (file f)}
-    end
+    def self.parse(folder)
+      Dir.glob("#{folder}/**/*.*").map! do |full_path|
+        # Separate the various params
+        content = File.read Dir.glob "#{full_path}*"
+        header  = (YAML.load content).symbolize
+        content.sub! /.*\-\-\-\n/im, '' # Remove the yaml header
+        path = full_path.sub(/.*\/pages/, '/pages').split('/'); path.shift
+        filename = path.pop # Remove everything annoying from the path
 
-    def self.file(path)
-      yaml path, (File.read Dir.glob("#{path}*"))
-    end
-
-    def self.yaml(path, content)
-      # The header
-      header  = (YAML.load content).symbolize
-      # The content. We just remove the header
-      content.sub! /.*\-\-\-\n/im, ''
-      parse path, header, content
-    end
-
-    def self.parse(full_path, params, content)
-      # If it's the full path, we remove unneeded path content
-      path = full_path.sub(/.*\/pages/, '/pages').split '/'
-      # The file name parsing
-      for_page   = /_?([a-zA-Z]*)_?(\d+)-(\d+)-(\d+)_(\w+)\.([a-zA-Z]+)/
-      for_layout = /(\w+)\.(\w+)/
-      if path[-1] =~ for_page
-        params[:markers], params[:year]     , params[:month]    ,  \
-            params[:day], params[:filetitle], params[:renderer] = \
-            *(path[-1].scan for_page)[0]
-        params[:markers] = params[:markers].split '_'
-      elsif path[-1] =~ for_layout
-        params[:filetitle], params[:renderer] = *(path[-1].scan for_layout)[0]
-      end
-      # The file name and pages/ are useless
-      path.delete_at(-1)
-      path.shift
-      # The other params to add
-      params[:folders] = path
-      params[:content] = content
-      
-      Page.new(params)
+        # Params attribution
+        for_page   = /_?([a-zA-Z]*)_?(\d+)-(\d+)-(\d+)_(\w+)\.([a-zA-Z]+)/
+        for_layout = /(\w+)\.(\w+)/ # These are the filename regexp for pages and layouts.
+        if filename =~ for_page
+          header[:markers], header[:year]     , header[:month]    ,  \
+              header[:day], header[:filetitle], header[:renderer] = \
+              *(filename.scan for_page)[0]
+          header[:markers] = header[:markers].split '_'
+        elsif filename =~ for_layout
+          header[:filetitle], header[:renderer] = *(filename.scan for_layout)[0]
+        end
+        header[:folders] = path
+        header[:content] = content
+        Page.new(header)
     end
   end
 
 
   class Page
-    attr_writer :rendered
+    attr_writer   :rendered
+    attr_accessor :params
     def initialize(params)
       @params = params
       @rendered = {}
     end
-    def [](element)
-      @params[element]
-    end
-    #def []=(element, value)
-    #  @params[element] = value
-    #end
 
     def rendered(name)
       @rendered[name] ||= render \
@@ -89,12 +67,13 @@ module  Fleow
           :name     => name,
           :content  => @params[name]
     end
+
     def method_missing(method, value = nil, *arguments)
-      method = method.to_s
       method.to_s.split('').last == "=" ?
-          @rendered[method.chomp.to_sym] = value :
+          @rendered[method.chop.to_sym] = value :
           @rendered[method.to_sym]
     end
+
   end
 
   class Holder
@@ -118,9 +97,7 @@ module  Fleow
 
     class << self
       include Enumerable
-      def each
-        (@@holders ||= []).each {|p| yield p}
-      end
+      def each() (@@holders ||= []).each {|p| yield p}; end
     end
   end
 
@@ -148,16 +125,13 @@ module  Fleow
 
   module Writer
     def write_all(dest)
-      ::Fleow::Holder.each do |h|
-        h.write(dest)
-      end
+      ::Dukkhaly::Holder.each {|h| h.write(dest)}
     end
   end
 end
 
-include Fleow::Renderer
-include Fleow::Writer
-
+include Dukkhaly::Renderer
+include Dukkhaly::Writer
 
 renderer(:haml) {|c| ::Haml::Engine.new(c).render(self) }
 renderer(:raw ) {|c| c}
